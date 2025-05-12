@@ -1,0 +1,76 @@
+## Expanded GPIO ##
+
+...
+10:51 :
+Both the SCL and SDA pins will get pull-up resistors. So if the host is
+outputting a 1, it is really just floating, so a short circuit doesn't happen.
+Pull-up resistors are typically 1-10k. The longer the wire the greater the interference
+so square-waves round out. A smaller resistor makes the square waves more crisp but
+uses more current.
+
+So if there is only one data pin, that means when the host is writing to the device,
+the host is making its data pin an output, and the device is making an input by default.
+Clock pin idles high, and then to send an eight bit number it will actually send 10 pulses.
+On the start bit, the data pin stays high until the end.. Then 8 bits, like an address.. 
+If the chip address doesn't match, they'll leave their pin floating, but the match will change the data
+pin from an input to output, host will change output to input, and the device will send back 
+an "acknowledgement bit" which would be holding the pin low. On the last bit, host and device 
+will flip, when communicating, and then the host will acknowledge that it got the data from the device..
+If the "ack" bit never comes back, either the code froze, or the code gave up.. lots of reasons.
+
+17:39 :
+Using the PICO SDK we don't have to deal with this, just have functions for I2C read and I2C write.
+One 8-bit number takes 10 bits of clock due to start and ack bits, so pretty bad overhead.
+The address is 7 bits, and the last bit specifies either a READ or WRITE. Function will shift the address for us
+and stick the last bit in.
+
+19:35 :
+So on the API we have an I2C write blocking function. 2 I2C modules, 1 or 0. Then  our 7-bit
+address, which usually we just make a #-define. So when writing, we have a buf of uint8_t of length 2, false means
+we are only writing, not trying to read from the chip, the first byte in buf is the register we are sending to,
+and the second is the data or value we want to send. Also an ADDR to specify the chip.
+
+If we want to read from a chip, first we have to write to chip saying we want to read. First have to write to them
+saying what register we want to read from in the future, and also TRUE, so communication continues.
+Then we can read. Essentially, I want to read 1 byte from this register from this chip.
+
+21:39 :
+We have the raw chip so we need to add the pull-up resistors. We are using the MCP23... something.
+It is an I/O expander. We get 8 more pins, but takes two pins to talk to the chip, so essentially net 6.
+They are all bi-directional, work like normal ones. 3 extra address pins, address not fixed for the chip.
+So can use a bunch of the same chip.
+
+25:54 :
+I/O pins generally give a couple of extra functionalities like interrupts. Would have anouther output pin INT 
+which can tell the host to read them. Kind of stupid. Don't know which pin generated interrupt (if interrupt occurs any pin changes).
+Also trying to not use RESET pin, input pin, makes it start over, power reset.
+Used for communication interrupt, like if PICO resets mid-communication. Just wire RESET high and ignore it.
+Also has polarity inversion, if you wanted that. Has a standby mode to reduce power.
+
+30:01 :
+Have to wire address pins high or low, and remember how you wired them. RESET pin high, ignore INTERRUPT.
+8 GPIO pins left. First address in chip sets the input/output of the 8 GPIO pins.
+At address HEX9 is the GPIO register, reads inputs. OLAT register, HEXA,
+makes pins turn on/off for output. Output pins will return their value.. Something something...
+
+Other registers handle initialization, interrupts, etc., not used. Also a pull-up resistor register for like adding
+a button, internal pull-up resistor. Ignore all these guys. Sequential bit hidden in one of the CON registers.
+Not really useful. Leave it NON-SEQUENTIAL. Confusing.
+
+34:42 :
+Ok, so when you're talking to a chip, the first thing that happens is you send a starting bit.
+Then send the OP code, which is part of the address that is a fixed number. Then send the address, non-fixed part that you set.
+Last bit is READ or WRITE. Then stream the data, and send a stop bit when done.. Referring to pictures in the datasheet.
+It sends back the ACK. Could send a register number next. And so on.
+
+Probably want an initialization function setting input/output for the pins. Then an output function which sets
+the bit for outputs, and an input function reading the inputs. Lots of bit shifting.
+
+38:52 :
+To get around RESET problems would be to add a heartbeat to the code. So every time you're in an infinite
+loop I would toggle the GP25 pin green led hardwired in board. So if not blinking, code is crashed, and do a power reset.
+So just try not to have any issues. 
+
+For the HW do initialization, then just turn LED on and off, then do the button stuff.
+To generate the code we can autogenerate some of the I2C stuff. Easy stuff.. Eeek, I need to grab this chip.
+Can look at all their example code. Marchuk looking at some temp sensor example, seems useful.

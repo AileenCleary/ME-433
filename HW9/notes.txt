@@ -1,0 +1,11 @@
+## MULTICORE ##
+
+2 ARM CPUs, can both be running independently -> CS 213.
+Shared memory places in two RAM FIFO buffers between the cores,
+Core0->Core1 and Core0<-Core1, data is pushed and popped between the two.
+Interrupt system alerts cores that there is data in the FIFO.
+Core reads/writes to RAM, sends a flag to the other core to access the data safely
+stored in RAM by the other. Not so necessary for a little microcontroller.
+
+hello_multicore.c example from Pico.
+doorbell example and runner example...

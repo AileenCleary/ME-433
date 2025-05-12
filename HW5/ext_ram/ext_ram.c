@@ -88,7 +88,6 @@ void spi_ram_init() {
     spi_write_blocking(SPI_PORT, buf, 2);
     cs_deselect(RAM_CS);
 
-    sleep_ms(1000); 
 }
 
 void write_to_dac(uint16_t voltage, int channel) {
@@ -117,7 +116,7 @@ bool create_waves(struct repeating_timer *t) {
     }
 
     float sine_val = sinf(2 * M_PI * SINE_FREQ * (float)sample_no / SAMPLE_RATE);
-    sine_val = 3.3f * (sine_val + 1.0f) / 2.0f;
+    sine_val = (sine_val + 1.0f) / 2.0f;
     printf("Sine: %f\n", sine_val);
 
     uint16_t addr = sample_no * 4;

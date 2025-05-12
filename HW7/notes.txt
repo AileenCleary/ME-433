@@ -1,0 +1,12 @@
+## I2C OLED DISPLAY ##
+
+Need to ask Marchuk if I need the Pico 2. If so need to solder it.. Fuck..
+Need to solder the OLED display too.
+
+128 pixels, x32 -> 4096 pixel bits. Copy the three files to same depth as the .c file,
+and in CMake add_executable, need to add the files (.c extensions), also add the .h to the top of the .c
+
+ASCII number is the first index of the font function. Constant x, down y,
+move over, loop through every letter, call the update function.
+Positive y is down. Null character at the end of character array (value 0, NULL character).
+For pixels on, is a one.

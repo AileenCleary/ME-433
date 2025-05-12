@@ -52,13 +52,13 @@ void write_to_dac(uint16_t voltage, int channel) {
 
 bool create_waves(struct repeating_timer *t) {
     float triangle_phase = (float)(sample_no % triangle_samples) / triangle_samples;
-    float triangle_val = 3.3f * (triangle_phase < 0.5f) ? (triangle_phase * 2.0f) : (2.0f * (1 - triangle_phase));
+    float triangle_val = (triangle_phase < 0.5f) ? (triangle_phase * 2.0f) : (2.0f * (1 - triangle_phase));
     uint16_t triangle_volt = (uint16_t)(triangle_val * DAC_RES);
     printf("Triangle: %f\n", triangle_val);
     write_to_dac(triangle_volt, 1); // Triangle Wave to B
 
     float sine_val = sinf(2 * M_PI * SINE_FREQ * (float)sample_no / SAMPLE_RATE);
-    sine_val = ((sine_val + 1.0f) / 2.0f) * 3.3f;
+    sine_val = ((sine_val + 1.0f) / 2.0f);
     printf("Sine: %f\n", sine_val);
     uint16_t sine_volt = (uint16_t)(sine_val * DAC_RES);
     write_to_dac(sine_volt, 0); // Sine Wave to A

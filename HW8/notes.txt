@@ -1,0 +1,26 @@
+## PWM, RC SERVOS, ADDRESSABLE LEDS ##
+
+Motor has a built-in low-pass filter. Some kind of input to PWM, i.e. Pico internal clock.
+Every two consecutive pins share the same timer, so same frequency.
+Can have different duty cycles though. Need to set up counter (for roll-over) and set
+the duty cycle and frequency, and the Pico will maintain the same waves...
+
+Specify the pin for PWM, assign it to that slice, take the clock which is 150Mhz, take a divider
+(like 3), so 150Mhz/3/1kHz frequency = 50,000 (counter value). Has to be smaller than 65,000 (16 bit counter).
+Minimize divisor to maximize resolution. #include hardware_pwm...
+
+Going to control RC servo motors using PWM to tell it an angle (instead of speed). Fire.
+Servo explanation... You did all this research for Argonne.
+
+VBUS is raw 5V.
+
+----------
+HOMEWORK
+
+Ok so passing another color immediately sets the color of the LED
+next on the chain. The reset time is more than 50uS, micro-seconds?
+
+First need to set the LEDS all off once powered.
+
+One LED needs to go through 360 colors in 5 seconds.
+So 72 colors per second.

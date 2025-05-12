@@ -1,0 +1,21 @@
+## CAMERA ##
+
+In addition to grabbing the OV7670, grab a wire with a female/male end to attach to the camera 
+and into the breadboard. Looks like a lot of wires? Like a grouping or header.
+
+Communication in parallel port, 8 bits simultaneously. There is also a cap to remove from the camera I think..
+Using a ribbon cable with all the colors, connected and stuff. Ignore PWDN pin, or just ground it.
+RESET pin to high? Datasheet says it has an internal pull down resistor, and a value of 1 resets all the pin values,
+so should that be a button?
+
+Read the first X PLK, ignore the last 20... Use PWM on Pico to generate internal clock (MCLK).
+Just wire up the camera and run the given code. Do we have to code anything?
+
+It's on I2C1, not 0, pins 14 and 15. Check the .c file for the pin numbers, can change them but probably don't.
+I guess everything is already in the code and NIck is just explaining how this works. Kinda awesome about the IMU stuff seeing as 
+we are having to modify the coursework waiting for this stuff. Send a letter in Putty to take a picture.
+
+init_camera is the hard part. God bless Nick.
+
+Going to use Python to collect the data and plot it. Nick gives two python files.
+Gotta figure out how to do the serial port stuff. Second version uses Pygame0.

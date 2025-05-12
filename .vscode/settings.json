@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.embeddedhtml": "html",
+        "compare": "c"
+    },
+    "cmake.sourceDirectory": "C:/Users/aclea/OneDrive/Desktop/Northwestern/me_433/HW2/blink"
+}
