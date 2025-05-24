@@ -1,0 +1,4 @@
+## IMU ##
+
+Have to solder the header pins to the IMU, 180 or 90 degree.
+Have to reinterpret data as a signed two byte number.
