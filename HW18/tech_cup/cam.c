@@ -336,8 +336,8 @@ int findLine(int row){
 
     // calculate the center of mass of the thresholded row
     for(i=0;i<IMAGESIZEX;i++){
-        int mass = 255 - picture.r[r + i];
-        //int mass = picture.r[r+i] + picture.g[r+i] + picture.b[r+i];
+        //int mass = 255 - picture.r[r + i];
+        int mass = picture.r[r+i] + picture.g[r+i] + picture.b[r+i];
         sumMass = sumMass + mass;
         sumMassR = sumMassR + mass*i;
     }
