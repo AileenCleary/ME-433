@@ -8,18 +8,21 @@
 #include <math.h>
 #include <stdlib.h>
 
-#define LINE_ROW 40
-#define BASE_SPEED 80
+#define BASE_SPEED 25
 #define MAX_PWM 100
 
-#define BIN1 18 // BIN1
-#define BIN2 19 // BIN2
-#define AIN1 20 // AIN1
-#define AIN2 21 // AIN2 *** 
+#define BIN1 18 // ENB -> Enable B
+#define BIN2 19 // PHB -> Phase B
+#define AIN1 20 // ENA -> Enable A
+#define AIN2 21 // PHA -> Phase A
 #define MODE 13
 #define UP 26
 #define DOWN 27
 #define POWER 28
+#define WRAP 6250
+#define MIN_SPEED 15
+#define FAR_ROW 30  // Look-ahead row
+
 
 #define I2C_OLED i2c0
 #define I2C_OLED_SDA 16 // ***
@@ -27,43 +30,95 @@
 
 #define PWM_FREQ 100 // 100Hz.
 #define NUM_ROWS 5
-#define OFFSET 20
 
-enum Param {P_KP, P_KI, P_KD};
+enum Param {P_KP, P_KI, P_KD, P_BASE};
 enum Param mode = P_KP;
 const float delta = 0.05; // ***
 bool state = false;
-
-int LINE_THRESHOLD = 100;
-
-int LeftMotor = 0, RightMotor = 0;
+float base_speed = BASE_SPEED; // Base speed for the motors
+volatile bool oled_needs_update = false;
+int LeftMotor = BASE_SPEED, RightMotor = BASE_SPEED;
 int sign = 1;
 
-float KP = 0.5, KI = 0.0, KD=0.2;
+float KP = 0.7, KI = 0.0, KD=0.15;
 float integral = 0;
 float prev_error = 0;
-bool avg_rows = false;
 
-const int rows[NUM_ROWS] = {28, 30, 32, 34, 36}; // Example rows for line detection
+const int rows[NUM_ROWS] = {50, 52, 54, 56, 58};  // much closer to robot
+int lost_counter = 0;
+bool lost_direction = true;
 
-void set_motor_speed(int IN1, int IN2, int speed) {
-    pwm_set_gpio_level(IN1, (uint16_t)(speed * 15000) / 100.0f);
-    pwm_set_gpio_level(IN2, 0);
+void OLEDPrint();
+void drive_motor(int IN1, int IN2, int speed);
+void draw_message(int x, int y, char * m);
+void draw_char(int x, int y, unsigned char c);
+
+void drive_motor(int IN1, int IN2, int speed) {
+    speed = speed > MAX_PWM ? MAX_PWM : speed;
+    speed = speed < -MAX_PWM ? -MAX_PWM : speed;
+
+    if (speed > 0) {
+        pwm_set_gpio_level(IN1, (speed * WRAP) / MAX_PWM);
+        pwm_set_gpio_level(IN2, 0);
+    } else if (speed < 0) {
+        pwm_set_gpio_level(IN1, 0);
+        pwm_set_gpio_level(IN2, (-speed * WRAP) / MAX_PWM);
+    } else {
+        pwm_set_gpio_level(IN1, 0);
+        pwm_set_gpio_level(IN2, 0);
+    }
 }
+
+void handle_line_loss() {
+    lost_counter++;
+    
+    if (lost_counter < 3) {
+        drive_motor(AIN1, AIN2, 0);
+        drive_motor(BIN1, BIN2, 0);
+        return;
+    }
+
+    int spin_speed = MIN_SPEED + (lost_counter * 2);  // Gradually increase speed
+    if (spin_speed > base_speed) spin_speed = base_speed;
+
+    if (lost_direction) {
+        drive_motor(AIN1, AIN2, spin_speed);
+        drive_motor(BIN1, BIN2, -spin_speed);
+    } else {
+        drive_motor(AIN1, AIN2, -spin_speed);
+        drive_motor(BIN1, BIN2, spin_speed);
+    }
+
+    if (lost_counter > 25) {
+        lost_counter = 0;
+        lost_direction = !lost_direction;
+    }
+}
+
+int findAverageLine(const int* rows, int count){
+    int sum = 0, validCount = 0;
+    for (int i = 0; i < count; i++) {
+        int x = findLine(rows[i]);
+        if (x >= 0) {
+            sum += x;
+            validCount++;
+        }
+    }
+    return (validCount > 0) ? (sum / validCount) : -1;
+}
+
 void gpio_callback(uint gpio, uint32_t events) {
     gpio_callback_cam(gpio, events); // Call the camera GPIO callback
     if (gpio == POWER) {
         state = !state;
         if (state) {
-            printf("Power ON\n");
         } else {
-            printf("Power OFF\n");
-            set_motor_speed(AIN1, AIN2, 0);
-            set_motor_speed(BIN1, BIN2, 0);
+            drive_motor(AIN1, AIN2, 0);
+            drive_motor(BIN1, BIN2, 0);
         }
     }
     if (gpio == MODE) {
-        mode = (enum Param)((mode + 1) % 3);
+        mode = (enum Param)((mode + 1) % 4);
     }
     if (gpio == DOWN) {
         sign = -1;
@@ -71,14 +126,23 @@ void gpio_callback(uint gpio, uint32_t events) {
         sign = 1;
     }
     if (gpio == UP || gpio == DOWN) {
-        if (mode == P_KP) {
-            KP += delta * sign;
-        } else if (mode == P_KI) {
+        if (mode == P_KI) {
             KI += delta * sign;
         } else if (mode == P_KD) {
             KD += delta * sign;
+        } else if (mode == P_KP) {
+            KP += delta * sign;
+        } else if (mode == P_BASE) {
+            base_speed += sign;
+            if (base_speed < 0) {
+                base_speed = 0;
+            } else if (base_speed > MAX_PWM) {
+                base_speed = MAX_PWM;
+            }
         }
     }
+    //OLEDPrint();
+    oled_needs_update = true;  // Mark for update
 }
 
 void motor_init() {
@@ -92,8 +156,8 @@ void motor_init() {
     uint slice3 = pwm_gpio_to_slice_num(AIN1);
     uint slice4 = pwm_gpio_to_slice_num(AIN2);
 
-    float divider = 100.0f;
-    uint16_t wrap = 15000;
+    float divider = 20.0f;
+    uint16_t wrap = 6250;
 
     pwm_set_clkdiv(slice1, divider);
     pwm_set_clkdiv(slice2, divider);
@@ -107,50 +171,94 @@ void motor_init() {
     pwm_set_enabled(slice2, true);
     pwm_set_enabled(slice3, true);
     pwm_set_enabled(slice4, true);
-}
-
-
-void draw_line(int x) {
-    ssd1306_drawPixel(x, LINE_ROW, 1);
-    ssd1306_drawPixel(IMAGESIZEX/2, LINE_ROW-10, 1);
-    ssd1306_update();
-}
+}   
 
 void PID_control() {
-    int line_x = findLine(IMAGESIZEY / 2);
     
-    if (line_x < 0) {
-        // No line detected, stop or turn
-        printf("No line detected\n");
-        set_motor_speed(AIN1, AIN2, 0);
-        set_motor_speed(BIN1, BIN2, 0);
+    int total = 0, count = 0;
+    for (int i = 0; i < NUM_ROWS; i++) {
+        int cx = findLine(rows[i]);
+        if (cx >= 0) {
+            total += cx;
+            count++;
+        }
+    }
+
+    int near_center = (count > 0) ? (total / count) : -1;
+    int far_center = findLine(FAR_ROW);
+    int curve_hint = (far_center >= 0 && near_center >= 0) ? (near_center - far_center) : 0; // ***
+
+    if (near_center < 0) {
+        handle_line_loss();
         return;
     }
+    lost_counter = 0;
 
-    int error = line_x - (IMAGESIZEX / 2);
+    int line_x = near_center; // ***
+
+    int error = (IMAGESIZEX / 2) - line_x;
+    if (abs(error) < 5 && count >= NUM_ROWS) {
+        LeftMotor += 5;
+        RightMotor += 5;
+    }
+
     integral += error;
+    integral = fminf(fmaxf(integral, -500), 500);
+
     float derivative = error - prev_error;
+    derivative = fminf(fmaxf(derivative, -50), 50);
+
+    // Optional tuning constants ***
+    float boost_KD = 1.5 * KD;
+    float curve_threshold = 20;  // You can tune this
+
+    if (abs(curve_hint) > curve_threshold) {
+        KD = boost_KD;          // more aggressive turning
+        base_speed -= 5;        // slow down slightly for sharp turns
+        if (base_speed < MIN_SPEED) base_speed = MIN_SPEED;
+    } else {
+        KD = 0.15;              // restore default
+        base_speed = BASE_SPEED;
+    }
+
 
     float correction = KP * error + KI * integral + KD * derivative;
+
+    float gain_scale = base_speed / 25.0f;
+    if (abs(error) > 30) correction *= gain_scale * 2.0;
+    else if (abs(error) > 20) correction *= 1.5;
+
     prev_error = error;
 
-    int left_speed = BASE_SPEED + (int)correction;
-    int right_speed = BASE_SPEED - (int)correction;
+    int left_speed = base_speed + (int)correction;
+    int right_speed = base_speed - (int)correction;
 
-    if (left_speed > MAX_PWM) {
-        LeftMotor = MAX_PWM;
-    } else if (left_speed < 0) {
-        LeftMotor = 0;
-    } else {
-        LeftMotor = left_speed;
+    // Clamp both directions.
+    LeftMotor = fminf(fmaxf(left_speed, -MAX_PWM), MAX_PWM);
+    RightMotor = fminf(fmaxf(right_speed, -MAX_PWM), MAX_PWM);
+
+    // Avoid deadband for small forward values.
+    if (LeftMotor > 0 && LeftMotor < MIN_SPEED) LeftMotor = MIN_SPEED;
+    if (RightMotor > 0 && RightMotor < MIN_SPEED) RightMotor = MIN_SPEED;
+}
+
+void OLEDPrint() {
+    ssd1306_clear();
+    char message[50];
+    sprintf(message, "KP:%.2f,KI:%.2f,KD:%.2f", KP, KI, KD);
+    draw_message(0, 0, message);
+    if (mode == P_KI) {
+        draw_message(0, 10, "KI");
+    } else if (mode == P_KD) {
+        draw_message(0, 10, "KD");
+    } else if (mode == P_KP) {
+        draw_message(0, 10, "KP");
+    } else if (mode == P_BASE) {
+        char other_msg[20];
+        sprintf(other_msg, "Base:%.2f", base_speed);
+        draw_message(0, 10, other_msg);
     }
-    if (right_speed > MAX_PWM) {
-        RightMotor = MAX_PWM;
-    } else if (right_speed < 0) {
-        RightMotor = 0;
-    } else {
-        RightMotor = right_speed;
-    }
+    ssd1306_update();
 }
 
 void draw_char(int x, int y, unsigned char c) {
@@ -178,9 +286,9 @@ int main()
 {
     stdio_init_all();
 
-    while (!stdio_usb_connected()) { // Remove for actual testing.
-        sleep_ms(100);
-    }
+    // while (!stdio_usb_connected()) { // Remove for actual testing.
+    //     sleep_ms(100);
+    // }
     printf("Hello, camera!\n");
 
     init_camera_pins();
@@ -211,36 +319,33 @@ int main()
     ssd1306_setup();
     ssd1306_clear();
     ssd1306_update();
+    int frame_count = 0;
     while (true) {
         //sleep_ms(1000);
 
-        while (!state) {
-            sleep_ms(100);
-        }
         // char m[10];
         // scanf("%s",m);
         setSaveImage(1);
         while(getSaveImage()==1){}
         convertImage();
         //printImage();
-        char message[50];
-        sprintf(message, "KP:%.2f,KI:%.2f,KD:%.2f", KP, KI, KD);
-        printf("KP: %.2f, KI: %.2f, KD: %.2f\n", KP, KI, KD);
-        draw_message(0, 0, message);
-        if (mode == P_KP) {
-            draw_message(0, 10, "KP");
-        } else if (mode == P_KI) {
-            draw_message(0, 10, "KI");
-        } else if (mode == P_KD) {
-            draw_message(0, 10, "KD");
+        if (frame_count++ >= 5) {  // adjust as needed
+            OLEDPrint();
+            frame_count = 0;
+        }
+        if (oled_needs_update) {
+            OLEDPrint();
+            oled_needs_update = false;
         }
         
-        ssd1306_update();
-        sleep_ms(100);
-
-        // compute_var_threshold(LINE_ROW); *** TBD
-        PID_control();
-        set_motor_speed(AIN1, AIN2, LeftMotor);
-        set_motor_speed(BIN1, BIN2, RightMotor);
+        if (!state) {
+            sleep_ms(10);
+            drive_motor(AIN1, AIN2, 0);
+            drive_motor(BIN1, BIN2, 0);
+        } else {
+            PID_control();
+            drive_motor(AIN1, AIN2, LeftMotor);
+            drive_motor(BIN1, BIN2, RightMotor);
+        }   
     }
 }

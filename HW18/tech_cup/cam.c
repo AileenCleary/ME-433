@@ -320,6 +320,7 @@ int findLine(int row){
     for(i=0;i<IMAGESIZEX;i++){
         int mass = picture.r[r+i] + picture.g[r+i] + picture.b[r+i];
         if (mass < avgBright){
+            
             // not bright enough, set pixel to black
             picture.r[r+i] = 0;
             picture.g[r+i] = 0;
@@ -335,9 +336,14 @@ int findLine(int row){
 
     // calculate the center of mass of the thresholded row
     for(i=0;i<IMAGESIZEX;i++){
-        int mass = picture.r[r+i] + picture.g[r+i] + picture.b[r+i];
+        int mass = 255 - picture.r[r + i];
+        //int mass = picture.r[r+i] + picture.g[r+i] + picture.b[r+i];
         sumMass = sumMass + mass;
         sumMassR = sumMassR + mass*i;
+    }
+    if (sumMass == 0){
+        // no mass, return -1
+        return -1;
     }
     float centerOfMass = (float)sumMassR / sumMass;
     return (int)(centerOfMass);
